@@ -1,183 +1,142 @@
-# 📑 Documentation: Multi-Layer Enterprise Homelab & Microservices Architecture
+# 📑 Documentation V2.1: Multi-Layer Enterprise Homelab, Automation Pipeline & Microservices Architecture
 
 ## 📋 Executive Summary
 
-Despliegue de una infraestructura de virtualización anidada, orquestación de contenedores y servicios de red locales desde cero. El proyecto abarca desde la preparación del Kernel del sistema anfitrión (Windows 11) hasta la implementación de un Proxy Inverso con SSL autofirmado, resolución DNS local personalizada, monitoreo en tiempo real con matriz de estados activa y gestor de contraseñas privado, incluyendo la resolución técnica de conflictos de puertos, interfaces IPv6 y políticas de seguridad del navegador.
+Despliegue integral, orquestación y resolución de incidentes (*Troubleshooting*) de una infraestructura de virtualización anidada (*Nested Virtualization*), orquestación de microservicios en Docker, almacenamiento distribuido SMB/CIFS, y un pipeline de automatización multimedia (Stack *Arr*).
+
+El proyecto abarca desde la preparación a bajo nivel del Kernel del anfitrión (Windows 11), pasando por hipervisores L1 (VirtualBox) y L2 (Proxmox VE), hasta el montaje de volúmenes compartidos en contenedores LXC no privilegiados mediante **Bind Mounts**. Incorpora proxies inversos con terminación SSL, telemetría en tiempo real, gestión de credenciales cifradas y bypass de protecciones Anti-DDoS (Cloudflare) mediante simulación de navegador (FlareSolverr).
 
 ---
 
-## 🏗️ Architecture Stack
+## 🏗️ Architecture Stack Diagram
 
 ```text
-[ Physical Host: Windows 11 ]
-       │ (VT-x Enabled / Hyper-V & IPv6 Disabled)
-[ Hypervisor L1: Oracle VirtualBox ]
+[ Physical Host: Windows 11 (24GB RAM) ] ──────── (IP Static: 192.168.100.8)
+       │ (SMB Share: \\192.168.100.8\Peliculas)
+[ Hypervisor L1: Oracle VirtualBox ] ──────────── (Resources: 4 vCores, 16GB RAM)
        │ (Bridged Adapter vmbr0: 192.168.100.x)
-[ Hypervisor L2: Proxmox VE 8.x ] ─── (IP: 192.168.100.222:8006)
-       │ (Unprivileged LXC Container + Nesting)
-[ Guest OS: Ubuntu 24.04 LTS ] ─────── (IP: 192.168.100.223)
-       │ (Docker Engine v29+ & Portainer CE)
-┌──────┴──────────────────────────────────────────────────────────────────┐
-[ NGINX Proxy Manager ]  [ AdGuard Home DNS ]  [ Uptime Kuma ]  [ Vaultwarden ]
-  Ports: 80, 443, 81       Ports: 53, 8082       Port: 3001       Port: 8081
-
+[ Hypervisor L2: Proxmox VE 8.x/9.x ] ─────────── (IP: 192.168.100.222:8006)
+       │ (CIFS Mounted: /mnt/win_media)
+       │ ─── Bind Mount (pct set 100 -mp0) ───┐
+[ Guest OS: LXC CT 100 (Ubuntu 24.04) ] ◄─────┘   (IP: 192.168.100.223, 8GB RAM, 4 vCores)
+       │ (Internal Directory: /mnt/win_media)
+       │ (Docker Engine & Portainer CE)
+┌──────┴──────────────────────────────────────────────────────────────────────────────┐
+│                                INFRASTRUCTURE TIER                                  │
+│ [ NGINX Proxy Mgr ]  [ AdGuard Home ]  [ Uptime Kuma ]  [ Vaultwarden ]  [ Homarr ] │
+│   Ports: 80, 443, 81   Ports: 53, 8082   Port: 3001       Port: 8081      Port: 7575 │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                MEDIA & AUTOMATION TIER                              │
+│ [ Jellyfin ]  [ qBittorrent ]  [ Prowlarr ]  [ Radarr ]  [ Sonarr ]  [ FlareSolverr ]
+│ Port: 8096      Port: 8083      Port: 9696    Port: 7878  Port: 8989    Port: 8191  │
+│      │               │               │             │           │             │      │
+└──────┴───────────────┴───────────────┴─────────────┴───────────┴─────────────┴──────┘
+       └────────────────── Docker Volume: /mnt/win_media:/media ◄─────────────────────┘
 ```
 
 ---
 
-## 🛠️ Step-by-Step Implementation
+## 🛠️ Phase 1: Host Operating System & Network Hardening
 
-### Phase 1: Host Operating System & Nested Virtualization
+### 1. Disabling Hyper-V Interference
 
-#### 1. Disabling Hyper-V Interference
-
-Para permitir que VirtualBox ejecute virtualización de hardware completa para Proxmox VE, se deshabilitaron las capas de aislamiento de Windows en PowerShell (Administrador):
+Para asegurar que VirtualBox ejecute virtualización de hardware completa (`VT-x/AMD-V`) y evitar la interceptación de subprocesos por parte de Windows:
 
 ```powershell
-# Disable Hyper-V Features
+# Disable Hyper-V Features & Guard
 Disable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All
-
-# Disable Virtual Machine Platform & Guard
 bcdedit /set hypervisorlaunchtype off
 ```
 
-#### 2. VirtualBox VM Configuration
+### 2. Network Hardening: Windows Static IP Assignment Fix
 
-* **Name:** `Proxmox-VE`
-* **Type:** Linux / Debian (64-bit)
-* **RAM:** 4096 MB | **CPU:** 2 Cores
-* **Nested VT-x/AMD-V:** Activated (`System ➔ Processor ➔ Enable Nested VT-x/AMD-V`)
-* **Network:** Adapter 1 ➔ **Bridged Adapter** (Puente) asignado a la interfaz física.
+Conflicto `MSFT_NetIPAddress already exists / Error 87` resuelto mediante Netsh Engine para sobrescribir el lease DHCP:
+
+```powershell
+# 1. Convert DHCP lease to Static IP
+netsh interface ipv4 set address name="Ethernet 2" static 192.168.100.8 255.255.255.0 192.168.100.1
+
+# 2. Assign Primary DNS (AdGuard LXC) & Secondary DNS
+Set-DnsClientServerAddress -InterfaceAlias "Ethernet 2" -ServerAddresses ("192.168.100.223", "1.1.1.1")
+```
 
 ---
 
-### Phase 2: Proxmox VE Installation & Initial Tuning
+## ⚙️ Phase 2: Proxmox VE (L2) Optimization & Storage Provisioning
 
-#### 1. PVE Base Setup
-
-* **IP Address:** `192.168.100.222/24`
-* **Gateway:** `192.168.100.1`
-* **FQDN:** `proxmox.home.lab`
-* **Root Password:** `<YOUR_ROOT_PASSWORD_HERE>`
-
-#### 2. Community Repositories (No-Subscription)
-
-En la consola de Proxmox PVE:
+### 1. Enterprise Repository Fix (401 Unauthorized Bypass)
 
 ```bash
-# Disable Enterprise Repo
-rm -f /etc/apt/sources.list.d/pve-enterprise.list
-
-# Add No-Subscription Repo
-echo "deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription" > /etc/apt/sources.list.d/pve-no-sub.list
-
-# Update Package Index
+# Disable Enterprise repos and enable Community No-Subscription
+grep -rl "enterprise.proxmox.com" /etc/apt/ | xargs sed -i 's/^/#/'
+echo "deb http://download.proxmox.com/debian/pve trixie pve-no-subscription" > /etc/apt/sources.list.d/pve-no-sub.list
 apt update && apt dist-upgrade -y
 ```
 
----
+### 2. LXC Container Deployment & Hot Disk Extension
 
-### Phase 3: LXC Container Deployment (Ubuntu 24.04)
-
-#### 1. Container Configuration Parameters
-
-* **CT ID:** `100` | **Hostname:** `docker-lab`
-* **Password:** `<YOUR_CONTAINER_PASSWORD_HERE>`
-* **Template:** `ubuntu-24.04-standard`
-* **Disk:** 8 GiB (local-lvm)
-* **CPU:** 1 Core | **Memory:** 1024 MiB RAM | 512 MiB Swap
-* **Network:** Bridge `vmbr0`, IPv4: **DHCP** (Asignada: `192.168.100.223`)
-* **Options:** **`Nesting=1`** habilitado (Crucial para ejecutar Docker dentro de LXC).
-
----
-
-### Phase 4: Docker Engine & Portainer CE Installation
-
-#### 1. OS Preparation & Package Installation
-
-En la terminal del contenedor `docker-lab`:
+Contenedor no privilegiado configurado con `Nesting=1` y `CIFS=1`. Expansión de disco en caliente tras volcado de logs (`no space left on device`):
 
 ```bash
-# Update System Packages & Install Dependencies
-apt update && apt install -y curl
-
-# Install Docker via Official Automated Script
-curl -fsSL https://get.docker.com | sh
-
-# Enable Docker Service on Boot
-systemctl enable --now docker
-```
-
-#### 2. Deploying Portainer CE Management UI
-
-```bash
-docker run -d \
-  -p 9000:9000 \
-  --name=portainer \
-  --restart=always \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v portainer_data:/data \
-  portainer/portainer-ce:latest
+pct resize 100 rootfs +15G
+docker system prune -a --volumes -f
 ```
 
 ---
 
-### Phase 5: Microservices Stack & Advanced Troubleshooting
+## 📁 Phase 3: High-Performance Storage Architecture (SMB + LXC Bind Mount)
 
-#### 1. Conflict Resolution: `systemd-resolved` Port 53 Collision
-
-Al desplegar AdGuard Home, el puerto 53 de DNS estaba acaparado por Ubuntu:
+Resolución de error `permission denied` en LXC no privilegiado al intentar montaje directo. Se implementó un montaje a nivel de hipervisor pasado por Bind Mount.
 
 ```bash
-# Disable DNS Stub Listener in Systemd Configuration
-sed -i 's/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
+# 1. Mount SMB Share on Proxmox Host (SMB 3.0)
+mkdir -p /mnt/win_media
+mount -t cifs //192.168.100.8/Peliculas /mnt/win_media -o username=Morochief,password="Bc135603.",iocharset=utf8,vers=3.0
 
-# Re-link resolv.conf & Restart Resolution Service
-ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
-systemctl restart systemd-resolved
+# 2. Bind Mount Share into LXC Container (CT 100)
+pct set 100 -mp0 /mnt/win_media,mp=/mnt/win_media
+
+# 3. Persistence in Proxmox /etc/fstab
+//192.168.100.8/Peliculas /mnt/win_media cifs username=Morochief,password=Bc135603.,iocharset=utf8,vers=3.0 0 0
 ```
-
-#### 2. Conflict Resolution: Port 80 Collision (Nginx Proxy Manager vs AdGuard)
-
-Al intentar levantar Nginx Proxy Manager, ocurrió un conflicto de binding en el puerto 80.
-
-* **Solución:** Re-mapeo del puerto Web Admin de AdGuard Home de `80:80` a `8082:80`, liberando los puertos `80` y `443` para Nginx Proxy Manager.
 
 ---
 
-### Phase 6: Stack Definitions (Portainer Docker Compose)
+## 🚨 Phase 4: Compute Scaling & Kernel Panic Mitigation (Troubleshooting)
 
-#### Stack 1: AdGuard Home (Network DNS Filter)
+### Incident Report: `nmi_backtrace_stall_check` (CPU Hard Lockup)
 
-```yaml
-version: '3.3'
-services:
-  adguardhome:
-    image: adguard/adguardhome:latest
-    container_name: adguardhome
-    restart: always
-    ports:
-      - '53:53/tcp'
-      - '53:53/udp'
-      - '3000:3000/tcp'
-      - '8082:80/tcp'
-    volumes:
-      - adguard_work:/opt/adguardhome/work
-      - adguard_conf:/opt/adguardhome/conf
+* **Síntoma:** Colapso total del Proxmox L2 al reproducir un archivo `.webm` en Jellyfin. Caída de red y congelamiento del servidor.
+* **Root Cause:** El contenedor LXC forzó transcodificación por software (FFmpeg) de un formato no soportado. Esto saturó los 5 vCores sobreprovisionados en VirtualBox, causando colisión de hilos con el host Windows y un `Kernel Panic` por falta de respuesta del CPU (`CPU stall`).
+* **Resolución (Resource Tuning):**
+1. Reajuste de vCores en VirtualBox a **4 CPUs** (evitando la zona roja de colisión).
+2. Ajuste de memoria del Hypervisor L1 a **16 GB RAM** (dejando 8 GB para el host).
+3. Reasignación de recursos en CT 100 (LXC): `8 GB RAM`, `2 GB Swap`, `4 Cores`.
 
-volumes:
-  adguard_work:
-  adguard_conf:
-```
+---
 
-#### Stack 2: Nginx Proxy Manager (Reverse Proxy)
+## 🛳️ Phase 5: Complete Microservices Declarative Stacks (Docker Compose)
+
+A continuación se detallan las definiciones completas en YAML de **cada uno de los Stacks** desplegados en Portainer CE:
+
+### Stack 1: Core Management & Reverse Proxy Tier (`infrastructure-core`)
 
 ```yaml
 version: '3.8'
 services:
-  app:
-    image: 'jc21/nginx-proxy-manager:latest'
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    ports:
+      - '9000:9000'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
     restart: unless-stopped
+
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager-app-1
     ports:
       - '80:80'
       - '81:81'
@@ -185,126 +144,255 @@ services:
     volumes:
       - npm_data:/data
       - npm_letsencrypt:/etc/letsencrypt
+    restart: unless-stopped
 
 volumes:
+  portainer_data:
   npm_data:
   npm_letsencrypt:
 ```
 
-#### Stack 3: Uptime Kuma (Service Monitoring)
+---
+
+### Stack 2: Security & Network Tier (`security-stack`)
 
 ```yaml
-version: '3.3'
+version: '3.8'
 services:
-  uptime-kuma:
-    image: louislam/uptime-kuma:1
-    container_name: uptime-kuma
-    restart: always
-    dns:
-      - 192.168.100.223 # Resolución de dominios .lab internos
+  adguardhome:
+    image: adguard/adguardhome:latest
+    container_name: adguardhome
     ports:
-      - '3001:3001'
+      - '53:53/tcp'
+      - '53:53/udp'
+      - '8082:80'
+      - '3000:3000'
     volumes:
-      - uptime_kuma_data:/app/data
+      - adguard_work:/opt/adguardhome/work
+      - adguard_conf:/opt/adguardhome/conf
+    restart: unless-stopped
 
-volumes:
-  uptime_kuma_data:
-```
-
-#### Stack 4: Vaultwarden (Password Manager with Security Hardening)
-
-```yaml
-version: '3.3'
-services:
   vaultwarden:
     image: vaultwarden/server:latest
     container_name: vaultwarden
-    restart: always
     environment:
-      - SIGNUPS_ALLOWED=false # Hardening: Desactiva el registro tras crear admin
+      - WEBSOCKET_ENABLED=true
     ports:
       - '8081:80'
     volumes:
       - vaultwarden_data:/data
+    restart: unless-stopped
 
 volumes:
+  adguard_work:
+  adguard_conf:
   vaultwarden_data:
 ```
 
 ---
 
-### Phase 7: SSL Certificate Generation & Reverse Proxy Setup
+### Stack 3: Observability & Dashboard Tier (`monitoring-stack`)
 
-#### 1. OpenSSL Local Certificate Generation
+```yaml
+version: '3.8'
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    ports:
+      - '3001:3001'
+    volumes:
+      - uptime_kuma_data:/app/data
+    restart: unless-stopped
 
-Para solucionar la restricción **`Subtle Crypto API`** de Vaultwarden y clientes móviles de Bitwarden (que exigen HTTPS obligatoriamente):
+  homarr:
+    image: ghcr.io/ajnart/homarr:latest
+    container_name: homarr
+    ports:
+      - '7575:7575'
+    volumes:
+      - homarr_configs:/app/data/configs
+      - homarr_icons:/app/public/icons
+      - homarr_data:/data
+    restart: unless-stopped
 
-```bash
-mkdir -p /opt/certs && cd /opt/certs
-openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-  -keyout vault.key -out vault.crt \
-  -subj "/CN=vault.lab/O=Homelab/OU=DevOps"
+volumes:
+  uptime_kuma_data:
+  homarr_configs:
+  homarr_icons:
+  homarr_data:
 ```
 
-#### 2. Nginx Proxy Manager & Custom SSL Mapping
+---
 
-1. Carga de par de llaves `vault.key` y `vault.crt` en **NPM ➔ Custom Certificates**.
-2. Configuración de Hosts en NPM:
+### Stack 4: Media Processing & Automation Pipeline (`arr-stack`)
 
-| Domain | Forward Host IP | Forward Port | Options Enabled |
-| --- | --- | --- | --- |
-| `vault.lab` | `192.168.100.223` | `8081` | Websockets, Force SSL (Custom SSL Certificate) |
-| `kuma.lab` | `192.168.100.223` | `3001` | Websockets Support |
-| `adguard.lab` | `192.168.100.223` | `8082` | Block Common Exploits |
+```yaml
+version: '3.8'
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    ports:
+      - '8096:8096'
+    volumes:
+      - jellyfin_config:/config
+      - /mnt/win_media:/media
+    restart: unless-stopped
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=America/Asuncion
+    ports:
+      - '6881:6881'
+      - '6881:6881/udp'
+      - '8083:8080'
+    volumes:
+      - qbittorrent_config:/config
+      - /mnt/win_media:/downloads
+    restart: unless-stopped
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=America/Asuncion
+    ports:
+      - '9696:9696'
+    volumes:
+      - prowlarr_config:/config
+    restart: unless-stopped
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=America/Asuncion
+    ports:
+      - '7878:7878'
+    volumes:
+      - radarr_config:/config
+      - /mnt/win_media:/media
+    restart: unless-stopped
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=America/Asuncion
+    ports:
+      - '8989:8989'
+    volumes:
+      - sonarr_config:/config
+      - /mnt/win_media:/media
+    restart: unless-stopped
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      - LOG_LEVEL=info
+      - TZ=America/Asuncion
+    ports:
+      - '8191:8191'
+    restart: unless-stopped
+
+volumes:
+  jellyfin_config:
+  qbittorrent_config:
+  prowlarr_config:
+  radarr_config:
+  sonarr_config:
+```
 
 ---
 
-### Phase 8: DNS Rewrites & Host Resolution Troubleshooting
+## 🛡️ Phase 6: WebUI Hardening & Proxy Resolution
 
-#### 1. AdGuard Home DNS Rewrites
+### Incident Report: qBittorrent HTTP 401 Unauthorized via NPM
 
-En **AdGuard Home ➔ Filtros ➔ Reescrituras DNS**:
+* **Problema:** Nginx Proxy Manager devolvía `Unauthorized` al acceder mediante `torrents.lab`.
+* **Root Cause:** qBittorrent bloquea cabeceras HTTP de proxy inverso por defecto y previene CSRF.
+* **Resolución (Bash Script Injection):** Búsqueda y parcheo del `qBittorrent.conf` en el volumen de Docker.
 
-* `vault.lab` ➔ `192.168.100.223`
-* `kuma.lab` ➔ `192.168.100.223`
-* `adguard.lab` ➔ `192.168.100.223`
-
-#### 2. Windows IPv6 Override Troubleshooting
-
-* **Síntoma:** `nslookup vault.lab` devolvía `UnKnown / fe80::1` y `Non-existent domain`.
-* **Causa raíz:** Windows utilizaba la pila IPv6 predeterminada antes que el servidor DNS IPv4 asignado.
-* **Resolución:**
-1. Desactivar **TCP/IPv6** en el adaptador de red (`ncpa.cpl`).
-2. Forzar vaciado de memoria caché DNS: `ipconfig /flushdns`.
-3. Diagnóstico exitoso mediante `nslookup vault.lab` (Responde: `192.168.100.223`).
+```bash
+CONF_FILE=$(find /var/lib/docker/volumes -name "qBittorrent.conf" 2>/dev/null | head -n 1)
+sed -i '/WebUI\\HostHeaderValidation/d' "$CONF_FILE"
+sed -i '/WebUI\\CSRFProtection/d' "$CONF_FILE"
+sed -i '/\[Preferences\]/a WebUI\\HostHeaderValidation=false\nWebUI\\CSRFProtection=false' "$CONF_FILE"
+docker restart qbittorrent
+```
 
 ---
 
-### Phase 9: Real-Time Monitoring Matrix (Uptime Kuma)
+## 🌐 Phase 7: API Integration & Anti-DDoS Circumvention (FlareSolverr)
 
-Se implementó la matriz completa de monitoreo con estado **100% OPERATIVO (UP)** e inspección activa:
+Para evadir los desafíos JavaScript de Cloudflare (`Blocked by CloudFlare Protection`) en indexadores Torrent de nivel Tier-1 (ej. 1337x):
 
-| Monitor Name | Type | Target URL / Host | Specific Configuration |
-| --- | --- | --- | --- |
-| **Portainer Panel** | HTTP(s) | `http://192.168.100.223:9000` | Default HTTP Check |
-| **Proxmox VE** | HTTP(s) | `https://192.168.100.222:8006` | `Ignore TLS/SSL error` enabled |
-| **Proxy Reverse (NPM)** | HTTP(s) | `http://192.168.100.223:81` | Default HTTP Check |
-| **Router Principal** | Ping | `192.168.100.1` | ICMP Echo Request |
-| **Servidor DNS AdGuard** | HTTP(s) | `http://192.168.100.223:8082` | Internal Web Check |
-| **Vaultwarden SSL** | HTTP(s) | `https://vault.lab` | `Ignore TLS/SSL error` enabled |
+1. **Despliegue de FlareSolverr:** Integrado en el Stack en el puerto `8191`.
+2. **Vinculación en Prowlarr:** Configurado como *Indexer Proxy* (`http://flaresolverr:8191`).
+3. **Sincronización de API (Full Sync):** Las *API Keys* de Radarr y Sonarr inyectadas en Prowlarr para actualización de Indexers en tiempo real (Zero-touch configuration).
+4. **qBittorrent Mapped:** Configurado como Download Client primario en Radarr/Sonarr.
 
 ---
 
-## 🔑 Credential & Service Index (Internal Homelab Audit)
+## 🗺️ Phase 8: Domain Routing & SSL Mapping Matrix (NPM + AdGuard)
 
-> **Nota de seguridad:** Las contraseñas reales se han reemplazado por placeholders para su publicación en el repositorio.
+Reescrituras locales completas en AdGuard Home para resolución `*.lab` apuntando a la IP `192.168.100.223`.
 
-| Service | Protocol / Access Point | Username | Password / Notes |
+| Domain Endpoint | Proxy Forward IP | Port | NPM Features Enabled | Role |
+| --- | --- | --- | --- | --- |
+| `vault.lab` | `192.168.100.223` | `8081` | Websockets, Custom SSL | Password Manager |
+| `kuma.lab` | `192.168.100.223` | `3001` | Websockets | Telemetry UI |
+| `adguard.lab` | `192.168.100.223` | `8082` | Block Common Exploits | DNS Sinkhole |
+| `jellyfin.lab` | `192.168.100.223` | `8096` | Websockets | Media Server |
+| `torrents.lab` | `192.168.100.223` | `8083` | Websockets | qBittorrent Client |
+| `prowlarr.lab` | `192.168.100.223` | `9696` | Block Common Exploits | Indexer Aggregator |
+| `radarr.lab` | `192.168.100.223` | `7878` | Block Common Exploits | Movies Automation |
+| `sonarr.lab` | `192.168.100.223` | `8989` | Block Common Exploits | Series Automation |
+
+---
+
+## 📈 Phase 9: Real-Time Monitoring Matrix (Uptime Kuma)
+
+| Monitor Name | Type | Target URL / Endpoint | Configuration Profile |
 | --- | --- | --- | --- |
-| **Proxmox VE** | `https://192.168.100.222:8006` | `root` | `<YOUR_PROXMOX_PASSWORD>` |
-| **LXC Shell** | Proxmox Console / SSH | `root` | `<YOUR_LXC_PASSWORD>` |
-| **Portainer CE** | `http://192.168.100.223:9000` | `admin` | `<YOUR_PORTAINER_PASSWORD>` |
-| **AdGuard Home** | `http://adguard.lab` / `:8082` | `admin` | `<YOUR_ADGUARD_PASSWORD>` |
-| **Nginx Proxy Mgr** | `http://192.168.100.223:81` | `admin` | `<YOUR_NPM_PASSWORD>` |
-| **Uptime Kuma** | `http://kuma.lab` | `admin` | `<YOUR_KUMA_PASSWORD>` |
-| **Vaultwarden** | `https://vault.lab` | `admin` | `<YOUR_VAULTWARDEN_PASSWORD>` |
+| **Proxmox VE Hypervisor** | HTTP(s) | `https://192.168.100.222:8006` | Ignore TLS/SSL Error |
+| **Portainer Engine** | HTTP(s) | `http://192.168.100.223:9000` | Standard HTTP Check |
+| **Proxy Reverse (NPM)** | HTTP(s) | `http://192.168.100.223:81` | Standard HTTP Check |
+| **Router Default Gateway** | Ping | `192.168.100.1` | ICMP Echo Request |
+| **Vaultwarden Backend** | HTTP(s) | `https://vault.lab` | Ignore TLS/SSL Error |
+| **Jellyfin Streaming** | HTTP(s) | `http://jellyfin.lab` | HTTP Response Check |
+| **Automation Prowlarr** | HTTP(s) | `http://prowlarr.lab` | HTTP Response Check |
+| **Automation Radarr** | HTTP(s) | `http://radarr.lab` | HTTP Response Check |
+| **Automation Sonarr** | HTTP(s) | `http://sonarr.lab` | HTTP Response Check |
+
+---
+
+## 🔑 Credential & Service Index (Master Audit)
+
+| Service Name | Web Endpoint | Master User | Password/Key | Role / Description |
+| --- | --- | --- | --- | --- |
+| **Proxmox VE** | `https://192.168.100.222:8006` | `root` | `Mjjagkaz012.3n3r01995*` | L2 Virtualization Hypervisor |
+| **LXC Shell** | SSH / PVE Console | `root` | `Mjjagkaz012.3n3r01995*` | Docker Host Environment |
+| **Windows SMB** | `\\192.168.100.8\Peliculas` | `Morochief` | `Bc135603.` | L0 Physical Storage Server |
+| **Portainer CE** | `http://192.168.100.223:9000` | `admin` | `Mjjagkaz012.3n3r01995*` | Container Orchestrator |
+| **AdGuard Home** | `http://adguard.lab` | `admin` | `Mjjagkaz012.3n3r01995*` | Network DNS / Rewriter |
+| **Nginx Proxy** | `http://192.168.100.223:81` | `admin` | `Mjjagkaz012.3n3r01995*` | Reverse Proxy Router |
+| **Uptime Kuma** | `http://kuma.lab` | `admin` | *(Custom Master)* | Sensor Matrix |
+| **Vaultwarden** | `https://vault.lab` | `root` | `Mjjagkaz012.3n3r01995*` | Password Cipher Manager |
+| **Jellyfin** | `http://jellyfin.lab` | `root` | `Mjjagkaz012.3n3r01995*` | Media Streaming Platform |
+| **qBittorrent** | `http://torrents.lab` | `admin` | `Mjjagkaz012.3n3r01995*` | Torrent Client Daemon |
+| **Prowlarr** | `http://prowlarr.lab` | `admin` | `Mjjagkaz012.3n3r01995*` | Tracker Aggregator |
+| **Radarr** | `http://radarr.lab` | `admin` | `Mjjagkaz012.3n3r01995*` | Movies Logic & Automation |
+| **Sonarr** | `http://sonarr.lab` | `admin` | `Mjjagkaz012.3n3r01995*` | Series Logic & Automation |

@@ -285,6 +285,8 @@ services:
     image: fallenbagel/jellyseerr:latest
     container_name: jellyseerr
     environment:
+      - PUID=0
+      - PGID=0
       - LOG_LEVEL=info
       - TZ=America/Asuncion
     ports:

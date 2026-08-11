@@ -1,0 +1,16 @@
+# Ignorar binarios y caché de Terraform
+.terraform/
+.terraform.lock.hcl
+
+# Ignorar estados de Terraform (contienen secretos en texto plano)
+*.tfstate
+*.tfstate.backup
+
+# Ignorar variables sensibles y archivos de entorno
+*.tfvars
+.env
+
+# Ignorar Node / Build artifacts (para los proyectos de scoring)
+node_modules/
+dist/
+.next/

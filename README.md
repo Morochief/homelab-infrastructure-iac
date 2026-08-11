@@ -230,32 +230,6 @@ volumes:
 ```yaml
 version: '3.8'
 services:
-  jellyfin:
-    image: jellyfin/jellyfin:latest
-    container_name: jellyfin
-    ports:
-      - '8096:8096'
-    volumes:
-      - jellyfin_config:/config
-      - /mnt/win_media:/media
-    restart: unless-stopped
-
-  qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:latest
-    container_name: qbittorrent
-    environment:
-      - PUID=0
-      - PGID=0
-      - TZ=America/Asuncion
-    ports:
-      - '6881:6881'
-      - '6881:6881/udp'
-      - '8083:8080'
-    volumes:
-      - qbittorrent_config:/config
-      - /mnt/win_media:/downloads
-    restart: unless-stopped
-
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:latest
     container_name: prowlarr
@@ -320,8 +294,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  jellyfin_config:
-  qbittorrent_config:
   prowlarr_config:
   radarr_config:
   sonarr_config:

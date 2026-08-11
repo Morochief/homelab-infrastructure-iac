@@ -307,12 +307,25 @@ services:
       - '8191:8191'
     restart: unless-stopped
 
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
+    environment:
+      - LOG_LEVEL=info
+      - TZ=America/Asuncion
+    ports:
+      - '5055:5055'
+    volumes:
+      - jellyseerr_config:/app/config
+    restart: unless-stopped
+
 volumes:
   jellyfin_config:
   qbittorrent_config:
   prowlarr_config:
   radarr_config:
   sonarr_config:
+  jellyseerr_config:
 ```
 
 ---

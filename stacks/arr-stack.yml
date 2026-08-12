@@ -1,0 +1,92 @@
+﻿# ==============================================================================
+# arr-stack.yml — Jellyfin + qBittorrent + Prowlarr + Radarr + Sonarr + Flare
+# ==============================================================================
+version: '3.8'
+
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      - TZ=America/Asuncion
+    ports:
+      - '8096:8096'
+    volumes:
+      - jellyfin_config:/config
+      - /mnt/win_media:/media
+    restart: unless-stopped
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=America/Asuncion
+      - WEBUI_PORT=8080
+    ports:
+      - '6881:6881'
+      - '6881:6881/udp'
+      - '8083:8080'
+    volumes:
+      - qbittorrent_config:/config
+      - /mnt/win_media:/downloads
+    restart: unless-stopped
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=America/Asuncion
+    ports:
+      - '9696:9696'
+    volumes:
+      - prowlarr_config:/config
+    restart: unless-stopped
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=America/Asuncion
+    ports:
+      - '7878:7878'
+    volumes:
+      - radarr_config:/config
+      - /mnt/win_media:/media
+    restart: unless-stopped
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=America/Asuncion
+    ports:
+      - '8989:8989'
+    volumes:
+      - sonarr_config:/config
+      - /mnt/win_media:/media
+    restart: unless-stopped
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      - LOG_LEVEL=info
+      - TZ=America/Asuncion
+    ports:
+      - '8191:8191'
+    restart: unless-stopped
+
+volumes:
+  jellyfin_config:
+  qbittorrent_config:
+  prowlarr_config:
+  radarr_config:
+  sonarr_config:

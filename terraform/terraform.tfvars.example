@@ -1,0 +1,28 @@
+﻿# ==============================================================================
+# terraform.tfvars.example — TEMPLATE (copiar como terraform.tfvars y completar)
+# terraform.tfvars esta en .gitignore — NUNCA subir al repositorio
+# ==============================================================================
+
+# --- Proxmox ---
+proxmox_host          = "192.168.100.222"
+proxmox_node          = "proxmox"          # hostname elegido durante instalacion
+proxmox_api_token     = "terraform@pve!homelab=XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+proxmox_root_password = "TU_PASSWORD_ROOT_PROXMOX"
+
+# --- LXC docker-lab ---
+lxc_ip            = "192.168.100.223"
+gateway_ip        = "192.168.100.1"
+lxc_root_password = "TU_PASSWORD_ROOT_LXC"
+lxc_disk_size     = 80
+lxc_cores         = 4
+lxc_memory_mb     = 8192
+lxc_swap_mb       = 2048
+
+# --- SMB Share (Windows) ---
+smb_host     = "192.168.100.8"
+smb_share    = "Peliculas"
+smb_user     = "Morochief"
+smb_password = "TU_PASSWORD_SMB"
+
+# --- General ---
+timezone = "America/Asuncion"

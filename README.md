@@ -117,116 +117,156 @@ pct set 100 -mp0 /mnt/win_media,mp=/mnt/win_media
 
 ## 🛳️ Phase 5: Complete Microservices Declarative Stacks (Docker Compose)
 
-A continuación se detallan las definiciones completas en YAML de **cada uno de los Stacks** desplegados en Portainer CE:
+A continuación se detallan las definiciones completas en YAML de **cada uno de los Stacks individuales** desplegados actualmente en Portainer CE:
 
-### Stack 1: Core Management & Reverse Proxy Tier (`infrastructure-core`)
-
+### 1. Nginx Proxy Manager (`nginx-proxy-manager`)
 ```yaml
 version: '3.8'
 services:
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
-    ports:
-      - '9000:9000'
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
+  app:
+    image: 'jc21/nginx-proxy-manager:latest'
     restart: unless-stopped
-
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:latest
-    container_name: nginx-proxy-manager-app-1
     ports:
-      - '80:80'
-      - '81:81'
-      - '443:443'
+      - '80:80'      # Tráfico HTTP web normal
+      - '81:81'      # Panel de administración de NPM
+      - '443:443'    # Tráfico HTTPS cifrado
     volumes:
       - npm_data:/data
       - npm_letsencrypt:/etc/letsencrypt
-    restart: unless-stopped
 
 volumes:
-  portainer_data:
   npm_data:
   npm_letsencrypt:
 ```
 
----
-
-### Stack 2: Security & Network Tier (`security-stack`)
-
+### 2. AdGuard Home (`adguard`)
 ```yaml
-version: '3.8'
+version: '3.3'
 services:
   adguardhome:
     image: adguard/adguardhome:latest
     container_name: adguardhome
+    restart: always
     ports:
       - '53:53/tcp'
       - '53:53/udp'
-      - '8082:80'
-      - '3000:3000'
+      - '3000:3000/tcp'
+      - '8082:80/tcp'      # <--- Cambiado de 80:80 a 8082:80
     volumes:
       - adguard_work:/opt/adguardhome/work
       - adguard_conf:/opt/adguardhome/conf
-    restart: unless-stopped
-
-  vaultwarden:
-    image: vaultwarden/server:latest
-    container_name: vaultwarden
-    environment:
-      - WEBSOCKET_ENABLED=true
-    ports:
-      - '8081:80'
-    volumes:
-      - vaultwarden_data:/data
-    restart: unless-stopped
 
 volumes:
   adguard_work:
   adguard_conf:
+```
+
+### 3. Vaultwarden (`vaultwarden`)
+```yaml
+version: '3.3'
+services:
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    restart: always
+    ports:
+      - '8081:80'
+    volumes:
+      - vaultwarden_data:/data
+
+volumes:
   vaultwarden_data:
 ```
 
----
-
-### Stack 3: Observability & Dashboard Tier (`monitoring-stack`)
-
+### 4. Uptime Kuma (`uptime-kuma`)
 ```yaml
-version: '3.8'
+version: '3.3'
 services:
   uptime-kuma:
     image: louislam/uptime-kuma:1
     container_name: uptime-kuma
+    restart: always
+    dns:
+      - 192.168.100.223   # <--- Le enseña a Uptime Kuma a consultar a AdGuard
     ports:
       - '3001:3001'
     volumes:
       - uptime_kuma_data:/app/data
-    restart: unless-stopped
 
+volumes:
+  uptime_kuma_data:
+```
+
+### 5. Homarr (`homarr`)
+```yaml
+version: '3.3'
+services:
   homarr:
-    image: ghcr.io/ajnart/homarr:latest
     container_name: homarr
+    image: ghcr.io/ajnart/homarr:latest
+    restart: unless-stopped
+    environment:
+      - DISABLE_IMAGE_OPTIMIZATION=true  # 👈 Agrega esta línea
     ports:
       - '7575:7575'
     volumes:
       - homarr_configs:/app/data/configs
       - homarr_icons:/app/public/icons
       - homarr_data:/data
-    restart: unless-stopped
 
 volumes:
-  uptime_kuma_data:
   homarr_configs:
   homarr_icons:
   homarr_data:
 ```
 
----
+### 6. Jellyfin (`jellyfin`)
+```yaml
+version: '3.5'
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    ports:
+      - '8096:8096'
+    volumes:
+      - jellyfin_config:/config
+      - jellyfin_cache:/cache
+      - /mnt/win_media:/media # 👈 Esta línea conecta los dibujos de Windows con Jellyfin
 
-### Stack 4: Media Processing & Automation Pipeline (`arr-stack`)
+volumes:
+  jellyfin_config:
+  jellyfin_cache:
+```
 
+### 7. qBittorrent (`qbittorrent`)
+```yaml
+version: '3.8'
+services:
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=America/Asuncion
+      - WEBUI_PORT=8080
+      - TORRENTING_PORT=6881
+    volumes:
+      - qbittorrent_config:/config
+      - /mnt/win_media:/downloads # 👈 Guarda directo en el disco de Windows
+    ports:
+      - '8083:8080'  # 👈 Puerto 8083 hacia afuera (Web UI)
+      - '6881:6881'  # Puerto de tráfico P2P
+      - '6881:6881/udp'
+    restart: unless-stopped
+
+volumes:
+  qbittorrent_config:
+```
+
+### 8. Arr Stack (`arr-stack`)
 ```yaml
 version: '3.8'
 services:
@@ -285,8 +325,6 @@ services:
     image: fallenbagel/jellyseerr:latest
     container_name: jellyseerr
     environment:
-      - PUID=0
-      - PGID=0
       - LOG_LEVEL=info
       - TZ=America/Asuncion
     ports:
@@ -299,6 +337,28 @@ volumes:
   prowlarr_config:
   radarr_config:
   sonarr_config:
+  jellyseerr_config:
+```
+
+### 9. Jellyseerr Stack (`jellyseerr-stack`)
+```yaml
+version: '3.8'
+services:
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
+    environment:
+      - PUID=0
+      - PGID=0
+      - LOG_LEVEL=info
+      - TZ=America/Asuncion
+    ports:
+      - '5055:5055'
+    volumes:
+      - jellyseerr_config:/app/config
+    restart: unless-stopped
+
+volumes:
   jellyseerr_config:
 ```
 

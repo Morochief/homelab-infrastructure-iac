@@ -1,0 +1,19 @@
+﻿version: '3.3'
+services:
+  homarr:
+    container_name: homarr
+    image: ghcr.io/ajnart/homarr:latest
+    restart: unless-stopped
+    environment:
+      - DISABLE_IMAGE_OPTIMIZATION=true  # 👈 Agrega esta línea
+    ports:
+      - '7575:7575'
+    volumes:
+      - homarr_configs:/app/data/configs
+      - homarr_icons:/app/public/icons
+      - homarr_data:/data
+
+volumes:
+  homarr_configs:
+  homarr_icons:
+  homarr_data:

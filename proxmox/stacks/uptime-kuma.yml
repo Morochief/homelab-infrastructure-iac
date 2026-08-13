@@ -1,0 +1,15 @@
+﻿version: '3.3'
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: always
+    dns:
+      - 192.168.100.223   # <--- Le enseña a Uptime Kuma a consultar a AdGuard
+    ports:
+      - '3001:3001'
+    volumes:
+      - uptime_kuma_data:/app/data
+
+volumes:
+  uptime_kuma_data:

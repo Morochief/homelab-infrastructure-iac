@@ -1,0 +1,22 @@
+﻿version: '3.8'
+services:
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=America/Asuncion
+      - WEBUI_PORT=8080
+      - TORRENTING_PORT=6881
+    volumes:
+      - qbittorrent_config:/config
+      - /mnt/win_media:/downloads # 👈 Guarda directo en el disco de Windows
+    ports:
+      - '8083:8080'  # 👈 Puerto 8083 hacia afuera (Web UI)
+      - '6881:6881'  # Puerto de tráfico P2P
+      - '6881:6881/udp'
+    restart: unless-stopped
+
+volumes:
+  qbittorrent_config:

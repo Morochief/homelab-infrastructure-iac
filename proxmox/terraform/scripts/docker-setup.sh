@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # ==============================================================================
 # docker-setup.sh — Bootstrap Docker + Deploy all stacks in docker-lab LXC
 # Se ejecuta automaticamente via Terraform (null_resource provisioner)
@@ -66,11 +66,15 @@ deploy_stack() {
   fi
 }
 
-deploy_stack "infrastructure-core"
-deploy_stack "security-stack"
-deploy_stack "monitoring-stack"
+deploy_stack "nginx-proxy-manager"
+deploy_stack "adguard"
+deploy_stack "vaultwarden"
+deploy_stack "uptime-kuma"
+deploy_stack "homarr"
+deploy_stack "jellyfin"
+deploy_stack "qbittorrent"
 deploy_stack "arr-stack"
-deploy_stack "jellyseerr"
+deploy_stack "jellyseerr-stack"
 
 # ------------------------------------------------------------------------------
 # 4. Estado final

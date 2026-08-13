@@ -1,0 +1,18 @@
+﻿version: '3.3'
+services:
+  adguardhome:
+    image: adguard/adguardhome:latest
+    container_name: adguardhome
+    restart: always
+    ports:
+      - '53:53/tcp'
+      - '53:53/udp'
+      - '3000:3000/tcp'
+      - '8082:80/tcp'      # <--- Cambiado de 80:80 a 8082:80
+    volumes:
+      - adguard_work:/opt/adguardhome/work
+      - adguard_conf:/opt/adguardhome/conf
+
+volumes:
+  adguard_work:
+  adguard_conf:

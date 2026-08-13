@@ -74,7 +74,6 @@ deploy_stack "homarr"
 deploy_stack "jellyfin"
 deploy_stack "qbittorrent"
 deploy_stack "arr-stack"
-deploy_stack "jellyseerr-stack"
 
 # ------------------------------------------------------------------------------
 # 4. Estado final

@@ -395,18 +395,20 @@ Para evadir los desafíos JavaScript de Cloudflare (`Blocked by CloudFlare Prote
 
 ## 🗺️ Phase 8: Domain Routing & SSL Mapping Matrix (NPM + AdGuard)
 
-Reescrituras locales completas en AdGuard Home para resolución `*.lab` apuntando a la IP `192.168.100.223`.
+Reescrituras locales completas (DNS Rewrites) configuradas en AdGuard Home para resolución `*.lab` apuntando a la IP `192.168.100.223`:
 
 | Domain Endpoint | Proxy Forward IP | Port | NPM Features Enabled | Role |
 | --- | --- | --- | --- | --- |
-| `vault.lab` | `192.168.100.223` | `8081` | Websockets, Custom SSL | Password Manager |
-| `kuma.lab` | `192.168.100.223` | `3001` | Websockets | Telemetry UI |
 | `adguard.lab` | `192.168.100.223` | `8082` | Block Common Exploits | DNS Sinkhole |
+| `homarr.lab` | `192.168.100.223` | `7575` | Websockets | Dashboard |
 | `jellyfin.lab` | `192.168.100.223` | `8096` | Websockets | Media Server |
-| `torrents.lab` | `192.168.100.223` | `8083` | Websockets | qBittorrent Client |
+| `kuma.lab` | `192.168.100.223` | `3001` | Websockets | Telemetry UI |
 | `prowlarr.lab` | `192.168.100.223` | `9696` | Block Common Exploits | Indexer Aggregator |
 | `radarr.lab` | `192.168.100.223` | `7878` | Block Common Exploits | Movies Automation |
+| `seerr.lab` | `192.168.100.223` | `5055` | Websockets | Media Requests |
 | `sonarr.lab` | `192.168.100.223` | `8989` | Block Common Exploits | Series Automation |
+| `torrents.lab` | `192.168.100.223` | `8083` | Websockets | qBittorrent Client |
+| `vault.lab` | `192.168.100.223` | `8081` | Websockets, Custom SSL | Password Manager |
 
 ---
 
